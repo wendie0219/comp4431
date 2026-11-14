@@ -1,0 +1,5 @@
+service_id,provider,service_name,service_type,coverage,wheelchair_onboard,eligibility,public_phone,source_url,secondary_source_url,staff_check,checked_on
+escort_01,長者安居協會,一線通管家易陪診服務,escort,全港,not_applicable,可陪同前往醫院或診所覆診,2338 8312,https://www.schsa.org.hk/sc/easy-home-service/clinic-visit,https://www.ha.org.hk/tkoh/hrc/PDF/Handboook%202025%20Upated/ChineseChi%20-%20Community%20care%20and%20support%20services.pdf,確認陪診員能否協助輪椅使用者及服務時段,2026-11-13
+escort_02,香港基督教女青年會,照顧易陪診服務,escort,全港,not_applicable,個別申請及服務條件向機構查詢,2700 1750,https://www.ha.org.hk/tkoh/hrc/PDF/Handboook%202025%20Upated/ChineseChi%20-%20Community%20care%20and%20support%20services.pdf,https://carers.hk/unit/5431,確認陪診員能否協助輪椅使用者及服務時段,2026-11-13
+transport_01,香港復康會,易達轎車,transport,全港,yes,持香港身份證的輪椅使用者可登記為會員,8106 6616,https://www.rehabsociety.org.hk/transport/ahc/zh-hant/,,確認會員資格和輪椅尺寸並分別查詢去程及回程車位,2026-11-13
+transport_02,香港復康會,易達巴士長者接載服務,transport,全港,unknown,年滿60歲且行動困難並須先登記為會員,2348 0608,https://www.rehabsociety.org.hk/transport/eab/zh-hant/%E9%95%B7%E8%80%85%E6%8E%A5%E8%BC%89%E6%9C%8D%E5%8B%99-2/,,確認能否全程留坐該輪椅及去回程車位。乘客須自行或由同行者協助到路旁上落車,2026-11-13

@@ -227,6 +227,19 @@ def matches(s):
     return [{**p, '服务时间段': slot} for p in (preferred_people or people)]
 
 
+def public_service_options(request):
+    options = []
+    for item in rows('carevisit_services.csv'):
+        kind = item['service_type']
+        if kind == 'escort' and request['escort']:
+            options.append(item)
+        elif kind == 'transport' and (request['outbound'] or request['return_trip']):
+            if request['wheelchair'] and item['wheelchair_onboard'] == 'no':
+                continue
+            options.append(item)
+    return options
+
+
 def detail(s):
     dt = datetime.fromisoformat(s['arrival'])
     when = dt.strftime('%Y年%m月%d日 %H:%M')
@@ -301,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == '/api/matches':
                     s = service(c, str(data.get('service_id','')))
                     if s['status'] != 'pending': raise ValueError('此服务已处理')
-                    result = {'matches': matches(s)}
+                    result = {'matches': matches(s), 'public_options': public_service_options(s)}
                 elif path == '/api/assign':
                     s = service(c, str(data.get('service_id','')))
                     if s['status'] != 'pending': raise ValueError('此服务已处理')
