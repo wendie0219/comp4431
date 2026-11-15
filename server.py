@@ -1,5 +1,10 @@
 """Community hospital assistance demo. Run: python3 server.py"""
 import csv
+import ai_client
+from contextvars import ContextVar
+from contextlib import contextmanager
+CHAT_STATE = ContextVar("chat_state", default={})
+from service_directory import filter_services
 import json
 import os
 import re
@@ -18,20 +23,16 @@ QUESTIONS = {'escort': '您需要陪诊吗？', 'outbound': '您需要去程接�
 DAYS = '一二三四五六日'
 
 
-def env():
-    path = ROOT / '.env'
-    if path.exists():
-        for line in path.read_text(encoding='utf-8').splitlines():
-            if '=' in line and not line.lstrip().startswith('#'):
-                key, value = line.split('=', 1)
-                os.environ.setdefault(key.strip(), value.strip().strip('"\''))
-
-
+@contextmanager
 def db():
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys=ON')
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init():
@@ -44,6 +45,10 @@ def init():
           escort INTEGER, outbound INTEGER, return_trip INTEGER, wheelchair INTEGER,
           district TEXT, address TEXT, staff_name TEXT, staff_phone TEXT,
           organization TEXT, organization_district TEXT, service_slot TEXT
+        );
+        CREATE TABLE IF NOT EXISTS request_receipts (
+          service_id TEXT NOT NULL, request_id TEXT NOT NULL, content TEXT NOT NULL, result TEXT NOT NULL,
+          PRIMARY KEY(service_id,request_id)
         );
         CREATE TABLE IF NOT EXISTS messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT, service_id TEXT NOT NULL,
@@ -79,29 +84,12 @@ def reply(c, sid, content):
 
 
 def llm_extract(stage, user_text, missing=None):
-    """OpenAI-compatible chat completions API. Returns validated JSON or None."""
-    env()
-    key, url = os.getenv('OPENAI_API_KEY', ''), os.getenv('OPENAI_BASE_URL', '')
-    if not key or not url:
-        return None
-    endpoint = url.rstrip('/')
-    if not endpoint.endswith('/chat/completions'):
-        endpoint += '/chat/completions'
-    prompt = ('只提取用户这句话明确表达的信息。输出JSON对象，不要解释。'
-              '对于confirm阶段输出{"yes":true/false/null}。'
-              '对于services阶段输出escort,outbound,return_trip,wheelchair四个键，各为true/false/null；'
-              '修改时也只输出明确修改的键。对于district阶段输出{"district":字符串或null}；'
-              '对于address阶段输出{"address":字符串或null}。'
-              f'当前阶段:{stage}。当前询问项目:{missing or "无"}。')
-    payload = json.dumps({'model': 'gpt-6-luna', 'temperature': 0,
-                          'response_format': {'type': 'json_object'},
-                          'messages': [{'role': 'system', 'content': prompt}, {'role': 'user', 'content': user_text}]}, ensure_ascii=False).encode()
-    req = urllib.request.Request(endpoint, data=payload, headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return json.loads(json.loads(r.read())['choices'][0]['message']['content'])
-    except Exception:
-        return None
+    return ai_client.extract(stage, user_text, missing, CHAT_STATE.get())
+
+
+def snapshot(s):
+    keys = ['service_id','hospital','arrival','stage','status','district','address'] + FIELDS
+    return {k: (None if s.get(k) is None else bool(s[k])) if k in FIELDS else s.get(k) for k in keys}
 
 
 def yesno(text):
@@ -114,17 +102,20 @@ def yesno(text):
 
 
 def extract_services(text, asked):
-    result = llm_extract('services', text, asked) or {}
-    out = {k: result[k] for k in FIELDS if type(result.get(k)) is bool}
-    patterns = {'escort': r'陪诊', 'outbound': r'去程|接我|接送去|送我去',
-                'return_trip': r'回程|送我回|接我回', 'wheelchair': r'轮椅'}
-    for k, pattern in patterns.items():
-        if k not in out:
-            m = re.search(r'(不需要|不用|不要|需要|要|有|没有)?\s*(' + pattern + r')', text)
-            if m:
-                prefix = m.group(1) or text[max(0, m.start()-4):m.start()]
-                out[k] = not bool(re.search(r'不需要|不用|不要|没有', prefix))
-    if asked and asked not in out:
+    result = llm_extract('services', text, asked)
+    if result is not None:
+        return {k: result[k] for k in FIELDS if type(result.get(k)) is bool}
+    # Explicit offline mode: conservative clauses, including suffix negation.
+    out = {}
+    patterns = {'escort': r'陪诊', 'outbound': r'去程|送.*去医院',
+                'return_trip': r'回程|接.*回|送.*回', 'wheelchair': r'轮椅'}
+    for clause in re.split(r'[，。；,;]', text):
+        for k, pattern in patterns.items():
+            if re.search(pattern, clause):
+                negative = re.search(r'不需要|不用|不要|没有|不需', clause)
+                family = k != 'wheelchair' and re.search(r'弟弟|哥哥|姐姐|妹妹|家人|家属|丈夫|妻子', clause)
+                out[k] = not bool(negative or family)
+    if asked and asked not in out and not out:
         v = yesno(text)
         if v is not None:
             out[asked] = v
@@ -142,9 +133,10 @@ def update_stage(c, sid, stage, content):
 
 def advance(c, s, text):
     sid, stage = s['service_id'], s['stage']
+    CHAT_STATE.set(snapshot(s))
     if stage == 'appointment_confirm':
         parsed = llm_extract('confirm', text)
-        answer = parsed.get('yes') if isinstance(parsed, dict) and type(parsed.get('yes')) is bool else yesno(text)
+        answer = parsed.get('yes') if isinstance(parsed, dict) else yesno(text)
         if answer is False:
             c.execute("UPDATE services SET status='cancelled',stage='cancelled' WHERE service_id=?", (sid,))
             return {'back': True, 'reply': reply(c, sid, '好的，请返回主页重新选择一条预约记录。')}
@@ -165,7 +157,7 @@ def advance(c, s, text):
         return {'reply': update_stage(c, sid, 'services_confirm', f'我记录的是：{service_summary(s)}。请确认以上信息是否无误？')}
     if stage == 'services_confirm':
         parsed = llm_extract('confirm', text)
-        answer = parsed.get('yes') if isinstance(parsed, dict) and type(parsed.get('yes')) is bool else yesno(text)
+        answer = parsed.get('yes') if isinstance(parsed, dict) else yesno(text)
         if answer is False:
             return {'reply': update_stage(c, sid, 'services_correct', '请告诉我需要修改什么？例如“去程改为需要”。')}
         if answer is None:
@@ -174,7 +166,7 @@ def advance(c, s, text):
     if stage in ('district', 'district_correct'):
         parsed = llm_extract('district', text)
         district = parsed.get('district') if isinstance(parsed, dict) else None
-        district = (district or text).strip()[:60]
+        district = ((district or '') if parsed is not None else text).strip()[:60]
         if not district:
             return {'reply': reply(c, sid, '请告诉我您所在的香港地区。')}
         c.execute('UPDATE services SET district=? WHERE service_id=?', (district, sid))
@@ -185,7 +177,7 @@ def advance(c, s, text):
     if stage in ('address', 'address_correct'):
         parsed = llm_extract('address', text)
         address = parsed.get('address') if isinstance(parsed, dict) else None
-        address = (address or text).strip()[:200]
+        address = ((address or '') if parsed is not None else text).strip()[:200]
         if not address:
             return {'reply': reply(c, sid, '请告诉我您的具体住址。')}
         c.execute('UPDATE services SET address=? WHERE service_id=?', (address, sid))
@@ -193,13 +185,23 @@ def advance(c, s, text):
         return {'reply': update_stage(c, sid, 'address_confirm', f'您所在的地区是{s["district"]}，具体住址是{s["address"]}。请确认是否无误？')}
     if stage == 'address_confirm':
         parsed = llm_extract('confirm', text)
-        answer = parsed.get('yes') if isinstance(parsed, dict) and type(parsed.get('yes')) is bool else yesno(text)
+        answer = parsed.get('yes') if isinstance(parsed, dict) else yesno(text)
         if answer is False:
             return {'reply': update_stage(c, sid, 'address_fix_choice', '请问需要修改地区还是具体住址？')}
         if answer is None:
             return {'reply': reply(c, sid, '请确认地区和住址是否无误。')}
+        return {'reply': update_stage(c, sid, 'final_confirm', '信息已记录，请核对右侧需求摘要。确认无误后点击“确认提交”；也可以先修改需求或地址。')}
+    if stage == 'final_confirm':
+        if text == '修改需求':
+            return {'reply': update_stage(c, sid, 'services_correct', '请告诉我需要修改哪些服务需求。')}
+        if text == '修改地址':
+            return {'reply': update_stage(c, sid, 'address_fix_choice', '请问需要修改地区还是具体住址？')}
+        if text != '确认提交':
+            return {'reply': reply(c, sid, '请核对需求摘要，点击“确认提交”或选择修改需求、修改地址。')}
+        if any(s[k] is None for k in FIELDS) or not s['district'] or not s['address']:
+            raise ValueError('信息尚未完整，请继续补充。')
         c.execute("UPDATE services SET status='pending',stage='complete' WHERE service_id=?", (sid,))
-        return {'reply': reply(c, sid, '您的申请已收到，我们正在处理。您可以稍后在“我的服务信息”查看。'), 'done': True}
+        return {'reply': reply(c, sid, '您的申请已提交，社区工作人员将开始处理。'), 'done': True}
     if stage == 'address_fix_choice':
         if '区' in text:
             return {'reply': update_stage(c, sid, 'district_correct', '请告诉我正确的地区。')}
@@ -228,16 +230,7 @@ def matches(s):
 
 
 def public_service_options(request):
-    options = []
-    for item in rows('carevisit_services.csv'):
-        kind = item['service_type']
-        if kind == 'escort' and request['escort']:
-            options.append(item)
-        elif kind == 'transport' and (request['outbound'] or request['return_trip']):
-            if request['wheelchair'] and item['wheelchair_onboard'] == 'no':
-                continue
-            options.append(item)
-    return options
+    return filter_services(request)
 
 
 def detail(s):
@@ -270,6 +263,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == '/chat.js':
+            body = (ROOT / 'chat.js').read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/javascript; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers(); self.wfile.write(body); return
         if path in ('/', '/index.html'):
             body = (ROOT / 'index.html').read_bytes()
             self.send_response(200)
@@ -281,10 +280,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             n = int(self.headers.get('Content-Length', 0))
-            if n > 20000: raise ValueError('内容过长')
+            path = urlparse(self.path).path
+            limit = 8_100_000 if path == '/api/transcribe' else 20000
+            if n < 0 or n > limit: raise ValueError('内容过长')
             data = json.loads(self.rfile.read(n) or b'{}')
             path = urlparse(self.path).path
+            if not isinstance(data, dict): raise ValueError('请求格式无效')
+            if path == '/api/config':
+                self.send(200, ai_client.capabilities()); return
+            if path == '/api/transcribe':
+                self.send(200, ai_client.transcribe(data)); return
             with db() as c:
+                if path in ('/api/start','/api/message'):
+                    c.execute('BEGIN IMMEDIATE')
                 if path == '/api/user':
                     name = str(data.get('username', '')).strip()
                     if not name: raise ValueError('请输入用户名')
@@ -300,14 +308,30 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('INSERT INTO services(service_id,username,appointment_id,hospital,hospital_district,arrival,started_at,stage,status) VALUES(?,?,?,?,?,?,?,?,?)',
                               (sid, name, aid, a['医院'], a['医院所在地区'], a['日期及到院时间'], stamp.isoformat(timespec='seconds'), 'appointment_confirm', 'draft'))
                     msg = f'您好，{name}。请确认：您要为{a["医院"]}、{a["日期及到院时间"].replace("T", " ")}的预约（编号{aid}）申请社区协助吗？'
-                    result = {'service_id': sid, 'reply': reply(c, sid, msg)}
+                    result = {'service_id': sid, 'reply': reply(c, sid, msg), 'summary': snapshot(service(c, sid)), 'capabilities': ai_client.capabilities()}
                 elif path == '/api/message':
                     sid = str(data.get('service_id',''))
                     s = service(c, sid)
-                    content = str(data.get('message','')).strip()[:1000]
-                    if not content: raise ValueError('请输入消息')
-                    c.execute('INSERT INTO messages(service_id,role,content,created_at) VALUES(?,?,?,?)', (sid,'user',content,now()))
-                    result = advance(c, s, content)
+                    if s['username'] != str(data.get('username','')): raise ValueError('用户与申请不匹配')
+                    content = str(data.get('message','')).strip()
+                    if not content or len(content) > 1000: raise ValueError('请输入 1–1000 字的消息')
+                    rid = str(data.get('request_id','')).strip()
+                    if not rid or len(rid) > 80: raise ValueError('请求编号无效，请刷新后重试')
+                    cached = c.execute('SELECT content,result FROM request_receipts WHERE service_id=? AND request_id=?',(sid,rid)).fetchone()
+                    if cached:
+                        if cached['content'] != content: raise ValueError('重试消息与原请求不一致')
+                        result = json.loads(cached['result'])
+                    else:
+                        c.execute('INSERT INTO messages(service_id,role,content,created_at) VALUES(?,?,?,?)', (sid,'user',content,now()))
+                        result = advance(c, s, content)
+                        result['summary'] = snapshot(service(c,sid))
+                        result['capabilities'] = ai_client.capabilities()
+                        c.execute('INSERT INTO request_receipts VALUES(?,?,?,?)',(sid,rid,content,json.dumps(result,ensure_ascii=False)))
+                elif path == '/api/session':
+                    s = service(c, str(data.get('service_id','')))
+                    if s['username'] != str(data.get('username','')): raise ValueError('用户与申请不匹配')
+                    history = [dict(x) for x in c.execute('SELECT role,content FROM messages WHERE service_id=? ORDER BY id',(s['service_id'],))]
+                    result = {'summary':snapshot(s),'messages':history,'capabilities':ai_client.capabilities()}
                 elif path == '/api/staff':
                     result = {'pending': [dict(x) for x in c.execute("SELECT * FROM services WHERE status='pending' ORDER BY started_at")],
                               'processed': [dict(x) for x in c.execute("SELECT * FROM services WHERE status='processed' ORDER BY started_at DESC")]}
@@ -329,10 +353,12 @@ class Handler(BaseHTTPRequestHandler):
                     result = {'text': detail(s)}
                 else: raise ValueError('未知操作')
             self.send(200, result)
+        except ai_client.ProviderError as e:
+            self.send(502, {'error': str(e), 'retryable': True})
         except (ValueError, KeyError, sqlite3.Error) as e:
             self.send(400, {'error': str(e)})
         except Exception as e:
-            self.send(500, {'error': f'服务器错误：{e}'})
+            self.send(500, {'error': '服务器暂时无法完成请求，请重试。'})
 
 
 if __name__ == '__main__':
