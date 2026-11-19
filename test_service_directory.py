@@ -19,7 +19,7 @@ class DirectoryTests(unittest.TestCase):
                     ('other', 'transport', '沙田區', 'yes'),
                     ('escort', 'escort', '沙田區', 'not_applicable')]:
                     writer.writerow(dict(service_id=sid, service_type=kind, coverage=area, wheelchair_onboard=access))
-            request = dict(escort=True, outbound=True, return_trip=False, wheelchair=True, district='南区', hospital_district='沙田区')
+            request = dict(escort=True, outbound=True, return_trip=False, wheelchair=True, district='南區', hospital_district='沙田區')
             self.assertEqual([x['service_id'] for x in filter_services(request, path)], ['local', 'unknown', 'escort'])
             request.update(escort=False, outbound=False)
             self.assertEqual(filter_services(request, path), [])

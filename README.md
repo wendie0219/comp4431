@@ -1,14 +1,14 @@
-# 社区就医协助 chatbot
+# 社區就醫協助 chatbot
 
-C 组员的家属端与服务目录筛选交接见 [C_HANDOFF.md](C_HANDOFF.md)。公开机构参考复用团队已有目录，预约及分配人员仍是模拟数据。
+C 組員的家屬端與服務目錄篩選交接見 [C_HANDOFF.md](C_HANDOFF.md)。公開機構參考複用團隊已有目錄，預約及分配人員仍是模擬數據。
 
-运行：`python3 server.py`，然后打开 http://127.0.0.1:8000 。只使用 Python 3 标准库，无需安装依赖。
+運行：`python3 server.py`，然後打開 http://127.0.0.1:8000 。只使用 Python 3 標準庫，無需安裝依賴。
 
-示例用户名：`jiwen`。服务记录和对话保存在同一文件夹下自动创建的 `chatbot.sqlite3` 中，刷新页面后仍保留。用户端与工作人员端读写同一数据库。预约和服务人员示例分别在两个 CSV 中。要接入模型，请填写 `.env` 的 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`（兼容 OpenAI Chat Completions 的基础 URL 或完整端点）。未填写时仍可用内置关键词解析体验流程；复杂自然语言建议配置模型。
+示例用戶名：`jiwen`。服務記錄和對話保存在同一文件夾下自動創建的 `chatbot.sqlite3` 中，刷新頁面後仍保留。用戶端與工作人員端讀寫同一數據庫。預約和服務人員示例分別在兩個 CSV 中。要接入模型，請填寫 `.env` 的 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`（兼容 OpenAI Chat Completions 的基礎 URL 或完整端點）。未填寫時仍可用內置關鍵詞解析體驗流程；複雜自然語言建議配置模型。
 
-本项目为课程演示。示例机构与人员及电话均为虚构，服务时间按预约所在半天筛选；去程时间仅按到院前一小时估算。
+本項目為課程演示。示例機構與人員及電話均為虛構，服務時間按預約所在半天篩選；去程時間僅按到院前一小時估算。
 
-安装 Gunicorn：`python3 -m pip install -r requirements.txt`。生产式启动入口：在此目录运行 `gunicorn --bind 127.0.0.1:8000 wsgi:app`。Gunicorn 与本机 `server.py` 共用相同接口和数据库。`.env` 含密钥，应保留在本地且不得提交；需要部署时在服务器环境变量中单独配置。使用 SQLite 时建议只运行一个 Gunicorn worker。
+安裝 Gunicorn：`python3 -m pip install -r requirements.txt`。生產式啟動入口：在此目錄運行 `gunicorn --bind 127.0.0.1:8000 wsgi:app`。Gunicorn 與本機 `server.py` 共用相同接口和數據庫。`.env` 含密鑰，應保留在本地且不得提交；需要部署時在服務器環境變量中單獨配置。使用 SQLite 時建議只運行一個 Gunicorn worker。
 
 
-模型、语音输入、实时需求摘要及最终提交说明见 [AI_VOICE_HANDOFF.md](AI_VOICE_HANDOFF.md)。语音需浏览器授予麦克风权限；转写文字可编辑，确认发送后才进入需求提取。
+模型、語音輸入、實時需求摘要及最終提交說明見 [AI_VOICE_HANDOFF.md](AI_VOICE_HANDOFF.md)。語音需瀏覽器授予麥克風權限；轉寫文字可編輯，確認發送後才進入需求提取。

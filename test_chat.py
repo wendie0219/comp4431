@@ -30,18 +30,18 @@ class ChatContractTests(unittest.TestCase):
         return self.post('message',{'username':'jiwen','service_id':self.sid,'message':text,'request_id':rid or str(self.seq)})
     def test_summary_unknown_review_submit_and_replay(self):
         self.assertIsNone(self.start['summary']['escort'])
-        for text in ['是','需要陪诊，需要去程，不需要回程，需要轮椅','是','南区','测试地址','是']:
+        for text in ['是','需要陪診，需要去程，不需要回程，需要輪椅','是','南區','測試地址','是']:
             result=self.say(text)
         self.assertEqual(result['summary']['stage'],'final_confirm')
         self.assertEqual(result['summary']['status'],'draft')
         self.assertFalse(result['summary']['return_trip'])
-        final=self.say('确认提交','submit-once')
+        final=self.say('確認提交','submit-once')
         self.assertTrue(final['done'])
-        self.assertEqual(final,self.say('确认提交','submit-once'))
+        self.assertEqual(final,self.say('確認提交','submit-once'))
         with server.db() as c:
-            self.assertEqual(c.execute("SELECT count(*) FROM messages WHERE content='确认提交'").fetchone()[0],1)
+            self.assertEqual(c.execute("SELECT count(*) FROM messages WHERE content='確認提交'").fetchone()[0],1)
     def test_provider_failure_rolls_back_and_retry_succeeds(self):
-        with patch.object(ai_client,'extract',side_effect=ai_client.ProviderError('接口超时')):
+        with patch.object(ai_client,'extract',side_effect=ai_client.ProviderError('接口超時')):
             with self.assertRaises(urllib.error.HTTPError) as error:self.say('是','retry-same')
             self.assertEqual(error.exception.code,502)
         with server.db() as c:
@@ -51,7 +51,7 @@ class ChatContractTests(unittest.TestCase):
     def test_model_null_is_not_overwritten_by_keywords(self):
         self.say('是')
         with patch.object(ai_client,'extract',return_value={'escort':None,'outbound':None,'return_trip':None,'wheelchair':None}):
-            result=self.say('陪诊是什么意思？')
+            result=self.say('陪診是什麼意思？')
         self.assertIsNone(result['summary']['escort'])
     def test_invalid_model_json_rejected(self):
         with patch.object(ai_client,'config',return_value={'OPENAI_API_KEY':'test','OPENAI_BASE_URL':'https://example.com/v1','OPENAI_MODEL':'test'}),patch.object(ai_client,'request_json',return_value={'choices':[{'message':{'content':'{"escort":"yes"}'}}]}):

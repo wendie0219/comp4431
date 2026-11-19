@@ -34,6 +34,6 @@ def app(environ, start_response):
     elif environ.get('REQUEST_METHOD') == 'POST':
         Handler.do_POST(bridge)
     else:
-        bridge.send(405, {'error': '不支持的请求方法'})
+        bridge.send(405, {'error': '不支持的請求方法'})
     start_response(bridge.status, bridge.response_headers)
     return [bridge.wfile.getvalue()]
