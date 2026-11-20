@@ -154,7 +154,7 @@ def advance(c, s, text):
         missing = next((k for k in FIELDS if s[k] is None), None)
         if missing:
             return {'reply': reply(c, sid, QUESTIONS[missing])}
-        return {'reply': update_stage(c, sid, 'services_confirm', f'我記錄的是：{service_summary(s)}。請確認以上信息是否無誤？')}
+        return {'reply': update_stage(c, sid, 'services_confirm', f'我記錄的是：{service_summary(s)}。請確認以上資料是否無誤？')}
     if stage == 'services_confirm':
         parsed = llm_extract('confirm', text)
         answer = parsed.get('yes') if isinstance(parsed, dict) else yesno(text)
@@ -190,7 +190,7 @@ def advance(c, s, text):
             return {'reply': update_stage(c, sid, 'address_fix_choice', '請問需要修改地區還是具體住址？')}
         if answer is None:
             return {'reply': reply(c, sid, '請確認地區和住址是否無誤。')}
-        return {'reply': update_stage(c, sid, 'final_confirm', '信息已記錄，請核對右側需求摘要。確認無誤後點擊“確認提交”；也可以先修改需求或地址。')}
+        return {'reply': update_stage(c, sid, 'final_confirm', '資料已記錄，請核對右側需求摘要。確認無誤後點擊“確認提交”；也可以先修改需求或地址。')}
     if stage == 'final_confirm':
         if text == '修改需求':
             return {'reply': update_stage(c, sid, 'services_correct', '請告訴我需要修改哪些服務需求。')}
@@ -199,7 +199,7 @@ def advance(c, s, text):
         if text != '確認提交':
             return {'reply': reply(c, sid, '請核對需求摘要，點擊“確認提交”或選擇修改需求、修改地址。')}
         if any(s[k] is None for k in FIELDS) or not s['district'] or not s['address']:
-            raise ValueError('信息尚未完整，請繼續補充。')
+            raise ValueError('資料尚未完整，請繼續補充。')
         c.execute("UPDATE services SET status='pending',stage='complete' WHERE service_id=?", (sid,))
         return {'reply': reply(c, sid, '您的申請已提交，社區工作人員將開始處理。'), 'done': True}
     if stage == 'address_fix_choice':
@@ -214,7 +214,7 @@ def advance(c, s, text):
 def slot_info(arrival):
     dt = datetime.fromisoformat(arrival)
     half = '上午' if dt.hour < 12 else '下午'
-    col = f'周{DAYS[dt.weekday()]}{half}'
+    col = f'週{DAYS[dt.weekday()]}{half}'
     start = dt - timedelta(hours=1 if dt.hour >= 12 else 0)
     end = dt + timedelta(hours=2)
     return col, f'{start:%Y-%m-%d %H:%M}–{end:%H:%M}'
@@ -302,7 +302,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == '/api/start':
                     name, aid = str(data.get('username','')).strip(), str(data.get('appointment_id',''))
                     a = appointment(aid)
-                    if not a or a['用戶名'] != name: raise ValueError('預約信息不匹配')
+                    if not a or a['用戶名'] != name: raise ValueError('預約資料不符')
                     stamp = datetime.now().astimezone()
                     sid = 'S' + stamp.strftime('%Y%m%d%H%M%S%f')
                     c.execute('INSERT INTO services(service_id,username,appointment_id,hospital,hospital_district,arrival,started_at,stage,status) VALUES(?,?,?,?,?,?,?,?,?)',

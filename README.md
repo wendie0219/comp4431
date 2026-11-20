@@ -1,14 +1,34 @@
-# 社區就醫協助 chatbot
+# CareVisit — Community Follow-up Visit Support Chatbot
 
-C 組員的家屬端與服務目錄篩選交接見 [C_HANDOFF.md](C_HANDOFF.md)。公開機構參考複用團隊已有目錄，預約及分配人員仍是模擬數據。
+CareVisit helps family caregivers request medical accompaniment, transport, and wheelchair support for a follow-up visit. Community staff can review the request and assign a worker. This project was developed for COMP4431.
 
-運行：`python3 server.py`，然後打開 http://127.0.0.1:8000 。只使用 Python 3 標準庫，無需安裝依賴。
+## Group members
 
-示例用戶名：`jiwen`。服務記錄和對話保存在同一文件夾下自動創建的 `chatbot.sqlite3` 中，刷新頁面後仍保留。用戶端與工作人員端讀寫同一數據庫。預約和服務人員示例分別在兩個 CSV 中。要接入模型，請填寫 `.env` 的 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`（兼容 OpenAI Chat Completions 的基礎 URL 或完整端點）。未填寫時仍可用內置關鍵詞解析體驗流程；複雜自然語言建議配置模型。
+| Student ID | Name |
+| --- | --- |
+| 23103844d | Yichu LIN |
+| 23101574d | Yiran WANG |
+| 26009616x | Jiwen ZHANG |
 
-本項目為課程演示。示例機構與人員及電話均為虛構，服務時間按預約所在半天篩選；去程時間僅按到院前一小時估算。
+## Additional features and implementation
 
-安裝 Gunicorn：`python3 -m pip install -r requirements.txt`。生產式啟動入口：在此目錄運行 `gunicorn --bind 127.0.0.1:8000 wsgi:app`。Gunicorn 與本機 `server.py` 共用相同接口和數據庫。`.env` 含密鑰，應保留在本地且不得提交；需要部署時在服務器環境變量中單獨配置。使用 SQLite 時建議只運行一個 Gunicorn worker。
+- **Voice input and transcript review:** Caregivers can use browser speech recognition.  The transcript is editable and enters the chat only after the caregiver sends it.
+- **Need extraction and live request summary:** The chatbot records whether the caregiver needs medical accompaniment, an outbound ride, a return ride, and a wheelchair. It asks follow-up questions for unanswered needs. The summary updates after each answer, and the caregiver can revise the needs or address before final submission. 
+- **Service filtering:** The system filters the sample staff roster by appointment time and wheelchair requirements, then prioritizes the relevant district.
+- **Shared family and staff workflow:** Both views use the same Python HTTP backend and SQLite database. Chat messages and request updates are saved as the conversation progresses. Submitted requests appear in the staff portal, and the family can view and copy the arrangement after staff assign a worker.
 
+## Run locally
 
-模型、語音輸入、實時需求摘要及最終提交說明見 [AI_VOICE_HANDOFF.md](AI_VOICE_HANDOFF.md)。語音需瀏覽器授予麥克風權限；轉寫文字可編輯，確認發送後才進入需求提取。
+Python 3 is required. From the project directory, run:
+
+```bash
+python3 server.py
+```
+
+Open <http://127.0.0.1:8000> in a browser. The sample username is `jiwen`. Local development uses only the Python standard library, so no package installation is required. The application creates `chatbot.sqlite3` in the project directory to store requests and conversations.
+
+To enable the chat model, copy `.env.example` to a local `.env` file and set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`. You can also set these as environment variables. For API-based speech transcription, set `SPEECH_MODEL` and, if needed, `SPEECH_API_KEY` and `SPEECH_BASE_URL`. The chatbot can still run with built-in keyword matching when no chat model is configured. Do not commit `.env` or API keys.
+
+## Online version and deployment
+
+The project can also be accessed at <https://comp4431-eimc.onrender.com>.

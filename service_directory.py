@@ -14,7 +14,7 @@ def filter_services(request, directory=None):
     with path.open(encoding='utf-8-sig', newline='') as stream:
         entries = list(csv.DictReader(stream))
     result = []
-    normalize = lambda value: str(value or '').strip().replace('區', '區')
+    normalize = lambda value: str(value or '').strip().replace('区', '區')
     for entry in entries:
         kind = entry['service_type']
         if kind == 'escort':

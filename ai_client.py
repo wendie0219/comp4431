@@ -114,7 +114,7 @@ district 階段：district 為用戶明確說出的香港地區字符串或 null
             validated[k] = v
         return validated
     except (KeyError, IndexError, TypeError, ValueError, AttributeError):
-        raise ProviderError('模型未返回有效需求信息，請重試或換一種說法。') from None
+        raise ProviderError('模型未返回有效需求資料，請重試或換一種說法。') from None
 
 
 def transcribe(data):
